@@ -10,11 +10,15 @@
             background: #36393f;
             color: white;
         }
+        .success { color: #43b581; }
+        .error { color: #ed4245; }
     </style>
 </head>
 <body>
-    <h1>Processing Authentication...</h1>
-    <div id="status">Please wait while we complete your login.</div>
+    <div id="status">
+        <h1>Processing Authentication...</h1>
+        <p>Saving your information...</p>
+    </div>
 
     <script>
         // Parse the result from URL parameters
@@ -24,28 +28,57 @@
         if (result) {
             try {
                 const data = JSON.parse(decodeURIComponent(result));
-                displayResult(data);
+                saveUserData(data);
             } catch (error) {
-                document.getElementById('status').innerHTML = 
-                    '<p style="color: red;">Error processing authentication</p>';
+                showError('Error processing authentication');
+            }
+        } else {
+            showError('No authentication data received');
+        }
+
+        function saveUserData(data) {
+            if (data.success) {
+                // Save to localStorage
+                localStorage.setItem('discord_user', JSON.stringify(data.user));
+                localStorage.setItem('discord_auth_time', new Date().toISOString());
+                
+                // Also save to sessionStorage for current session
+                sessionStorage.setItem('current_discord_user', JSON.stringify(data.user));
+                
+                showSuccess(data.user);
+            } else {
+                showError(data.error);
             }
         }
 
-        function displayResult(data) {
-            const statusDiv = document.getElementById('status');
-            
-            if (data.success) {
-                statusDiv.innerHTML = `
-                    <p style="color: green;">✅ Authentication successful!</p>
-                    <p>Welcome, ${data.user.username}!</p>
-                    <p>You can close this window now.</p>
-                `;
-            } else {
-                statusDiv.innerHTML = `
-                    <p style="color: red;">❌ Authentication failed</p>
-                    <p>Error: ${data.error}</p>
-                `;
-            }
+        function showSuccess(user) {
+            document.getElementById('status').innerHTML = `
+                <h1 class="success">✅ Authentication Successful!</h1>
+                <p>Welcome, <strong>${user.username}</strong>!</p>
+                <p>Email: ${user.email}</p>
+                <p>User ID: ${user.id}</p>
+                <p>Your information has been saved.</p>
+                <button onclick="goToDashboard()">Go to Dashboard</button>
+                <br><br>
+                <small>Data saved to browser storage. Will persist until you clear browser data.</small>
+            `;
+        }
+
+        function showError(message) {
+            document.getElementById('status').innerHTML = `
+                <h1 class="error">❌ Authentication Failed</h1>
+                <p>${message}</p>
+                <button onclick="retryLogin()">Try Again</button>
+            `;
+        }
+
+        function goToDashboard() {
+            // Redirect to your main app
+            window.location.href = 'https://spontaneous-fenglisu-09c8c8.netlify.app/index.html';
+        }
+
+        function retryLogin() {
+            window.location.href = 'https://spontaneous-fenglisu-09c8c8.netlify.app/index.html';
         }
     </script>
 </body>
