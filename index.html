@@ -1,94 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discord OAuth App</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #36393f;
-            color: white;
-        }
-        .container {
-            background: #2f3136;
-            padding: 30px;
-            border-radius: 8px;
-            margin-top: 50px;
-        }
-        button {
-            background: #5865f2;
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        #result {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 4px;
-            display: none;
-        }
-        .success { background: #2d7d46; }
-        .error { background: #ed4245; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Discord OAuth Example</h1>
-        <button onclick="startOAuth()">Login with Discord</button>
-        <div id="result"></div>
-    </div>
-
-    <script>
-        // Your Netlify function URL
-        const NETLIFY_APP_URL = 'https://spontaneous-fenglisu-09c8c8.netlify.app';
-        // Replace with your actual GitHub Pages URL
-        const GITHUB_PAGES_URL = 'https://your-github-username.github.io/discord-oauth-frontend';
+// Add this to your index.html script
+function checkSavedUser() {
+    const savedUser = localStorage.getItem('discord_user');
+    const authTime = localStorage.getItem('discord_auth_time');
+    
+    if (savedUser && authTime) {
+        const user = JSON.parse(savedUser);
+        const loginTime = new Date(authTime);
+        const now = new Date();
+        const hoursSinceLogin = (now - loginTime) / (1000 * 60 * 60);
         
-        function startOAuth() {
-            // Generate random state for security
-            const state = Math.random().toString(36).substring(7);
-            localStorage.setItem('oauth_state', state);
-            
-            // Redirect to Discord OAuth
-            const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(NETLIFY_APP_URL + '/.netlify/functions/auth-callback')}&response_type=code&scope=identify%20email&state=${state}`;
-            window.location.href = discordAuthUrl;
+        // Auto-logout after 24 hours
+        if (hoursSinceLogin < 24) {
+            displayUserInfo(user);
+        } else {
+            localStorage.removeItem('discord_user');
+            localStorage.removeItem('discord_auth_time');
         }
+    }
+}
 
-        // Check if we're on the callback page
-        if (window.location.pathname.includes('callback.html')) {
-            const urlParams = new URLSearchParams(window.location.search);
-            const result = urlParams.get('result');
-            
-            if (result) {
-                const data = JSON.parse(decodeURIComponent(result));
-                displayResult(data);
-            }
-        }
+function displayUserInfo(user) {
+    const result = document.getElementById('result');
+    result.style.display = 'block';
+    result.className = 'success';
+    result.innerHTML = `
+        <h3>Welcome back, ${user.username}! ✅</h3>
+        <p>You're already logged in.</p>
+        <p>Email: ${user.email}</p>
+        <p>User ID: ${user.id}</p>
+        <button onclick="logout()">Logout</button>
+    `;
+}
 
-        function displayResult(data) {
-            const result = document.getElementById('result');
-            result.style.display = 'block';
-            
-            if (data.success) {
-                result.className = 'success';
-                result.innerHTML = `
-                    <h3>Success! 🎉</h3>
-                    <p>Welcome, <strong>${data.user.username}</strong>#${data.user.discriminator}</p>
-                    <p>User ID: ${data.user.id}</p>
-                    ${data.user.email ? `<p>Email: ${data.user.email}</p>` : ''}
-                `;
-            } else {
-                result.className = 'error';
-                result.innerHTML = `<h3>Error:</h3><p>${data.error}</p>`;
-            }
-        }
-    </script>
-</body>
-</html>
+function logout() {
+    localStorage.removeItem('discord_user');
+    localStorage.removeItem('discord_auth_time');
+    sessionStorage.removeItem('current_discord_user');
+    location.reload();
+}
+
+// Check for saved user on page load
+window.addEventListener('load', checkSavedUser);
