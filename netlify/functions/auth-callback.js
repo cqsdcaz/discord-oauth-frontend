@@ -1,9 +1,5 @@
-const axios = require('axios');
-
 exports.handler = async (event) => {
-    console.log('Function called with:', event.queryStringParameters);
-    
-    // Handle preflight OPTIONS request
+    // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -16,69 +12,95 @@ exports.handler = async (event) => {
         };
     }
 
+    // Only allow GET requests
     if (event.httpMethod !== 'GET') {
-        return { 
-            statusCode: 405, 
-            body: 'Method Not Allowed',
-            headers: { 'Access-Control-Allow-Origin': '*' }
-        };
-    }
-
-    const { code, error } = event.queryStringParameters;
-
-    if (error) {
-        return redirectWithError(error);
-    }
-
-    if (!code) {
         return {
-            statusCode: 400,
-            body: JSON.stringify({ error: 'No code provided' }),
-            headers: { 'Access-Control-Allow-Origin': '*' }
+            statusCode: 405,
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: JSON.stringify({ error: 'Method Not Allowed' })
         };
+    }
+
+    const { code, error, state } = event.queryStringParameters;
+
+    // Handle OAuth errors from Discord
+    if (error) {
+        return redirectToFrontend({ success: false, error: error });
+    }
+
+    // Check if we have an authorization code
+    if (!code) {
+        return redirectToFrontend({ success: false, error: 'No authorization code received' });
     }
 
     try {
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', 
-            new URLSearchParams({
+        // Exchange code for access token
+        const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
                 client_id: process.env.DISCORD_CLIENT_ID,
                 client_secret: process.env.DISCORD_CLIENT_SECRET,
                 grant_type: 'authorization_code',
                 code: code,
                 redirect_uri: 'https://spontaneous-fenglisu-09c8c8.netlify.app/.netlify/functions/auth-callback'
-            }), {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            }
-        );
-
-        const accessToken = tokenResponse.data.access_token;
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
-            headers: { Authorization: `Bearer ${accessToken}` }
+            })
         });
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ 
-                success: true, 
-                user: userResponse.data 
-            }),
-            headers: { 
-                'Content-Control-Allow-Origin': '*',
-                'Content-Type': 'application/json'
+        if (!tokenResponse.ok) {
+            const errorData = await tokenResponse.text();
+            throw new Error(`Token exchange failed: ${tokenResponse.status} ${errorData}`);
+        }
+
+        const tokenData = await tokenResponse.json();
+        const accessToken = tokenData.access_token;
+
+        // Get user info from Discord
+        const userResponse = await fetch('https://discord.com/api/users/@me', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
             }
-        };
+        });
+
+        if (!userResponse.ok) {
+            throw new Error(`User info fetch failed: ${userResponse.status}`);
+        }
+
+        const userData = await userResponse.json();
+
+        // Redirect to frontend with success
+        return redirectToFrontend({ 
+            success: true, 
+            user: {
+                id: userData.id,
+                username: userData.username,
+                discriminator: userData.discriminator,
+                avatar: userData.avatar,
+                email: userData.email
+            }
+        });
 
     } catch (error) {
-        console.error('OAuth error:', error.response?.data || error.message);
-        return {
-            statusCode: 400,
-            body: JSON.stringify({ 
-                success: false, 
-                error: error.response?.data?.error || error.message 
-            }),
-            headers: { 'Access-Control-Allow-Origin': '*' }
-        };
+        console.error('OAuth error:', error);
+        return redirectToFrontend({ 
+            success: false, 
+            error: error.message || 'Authentication failed' 
+        });
     }
 };
+
+function redirectToFrontend(data) {
+    // Replace with your actual GitHub Pages URL
+    const frontendUrl = 'https://your-github-username.github.io/discord-oauth-frontend/callback.html';
+    
+    return {
+        statusCode: 302,
+        headers: {
+            'Location': `${frontendUrl}?result=${encodeURIComponent(JSON.stringify(data))}`,
+            'Access-Control-Allow-Origin': '*'
+        },
+        body: ''
+    };
+}
