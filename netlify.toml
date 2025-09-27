@@ -4,5 +4,3 @@
 
 [build.environment]
   NODE_VERSION = "18"
-
-# No build command needed - Netlify auto-detects functions
