@@ -47,17 +47,15 @@
 
     <script>
         // Replace with your Netlify app URL
-        const NETLIFY_APP_URL = 'https://your-app-name.netlify.app';
-        
-        function startOAuth() {
-            // Generate random state for security
-            const state = Math.random().toString(36).substring(7);
-            localStorage.setItem('oauth_state', state);
-            
-            // Redirect to Discord OAuth
-            const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(NETLIFY_APP_URL + '/.netlify/functions/auth-callback')}&response_type=code&scope=identify&state=${state}`;
-            window.location.href = discordAuthUrl;
-        }
+const NETLIFY_APP_URL = 'https://spontaneous-fenglisu-09c8c8.netlify.app';
+
+function startOAuth() {
+    const state = Math.random().toString(36).substring(7);
+    localStorage.setItem('oauth_state', state);
+    
+    const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(NETLIFY_APP_URL + '/.netlify/functions/auth-callback')}&response_type=code&scope=identify&state=${state}`;
+    window.location.href = discordAuthUrl;
+}
 
         // Handle callback from Netlify function
         window.addEventListener('message', function(event) {
