@@ -1,5 +1,4 @@
 exports.handler = async (event) => {
-    // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
         return {
             statusCode: 200,
@@ -12,7 +11,6 @@ exports.handler = async (event) => {
         };
     }
 
-    // Only allow GET requests
     if (event.httpMethod !== 'GET') {
         return {
             statusCode: 405,
@@ -21,20 +19,17 @@ exports.handler = async (event) => {
         };
     }
 
-    const { code, error, state } = event.queryStringParameters;
+    const { code, error } = event.queryStringParameters;
 
-    // Handle OAuth errors from Discord
     if (error) {
         return redirectToFrontend({ success: false, error: error });
     }
 
-    // Check if we have an authorization code
     if (!code) {
         return redirectToFrontend({ success: false, error: 'No authorization code received' });
     }
 
     try {
-        // Exchange code for access token
         const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
             method: 'POST',
             headers: {
@@ -50,18 +45,14 @@ exports.handler = async (event) => {
         });
 
         if (!tokenResponse.ok) {
-            const errorData = await tokenResponse.text();
-            throw new Error(`Token exchange failed: ${tokenResponse.status} ${errorData}`);
+            throw new Error(`Token exchange failed: ${tokenResponse.status}`);
         }
 
         const tokenData = await tokenResponse.json();
         const accessToken = tokenData.access_token;
 
-        // Get user info from Discord
         const userResponse = await fetch('https://discord.com/api/users/@me', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
 
         if (!userResponse.ok) {
@@ -70,36 +61,27 @@ exports.handler = async (event) => {
 
         const userData = await userResponse.json();
 
-        // Redirect to frontend with success
         return redirectToFrontend({ 
             success: true, 
-            user: {
-                id: userData.id,
-                username: userData.username,
-                discriminator: userData.discriminator,
-                avatar: userData.avatar,
-                email: userData.email
-            }
+            user: userData
         });
 
     } catch (error) {
-        console.error('OAuth error:', error);
         return redirectToFrontend({ 
             success: false, 
-            error: error.message || 'Authentication failed' 
+            error: error.message 
         });
     }
 };
 
+// FIXED: Use your actual Netlify domain
 function redirectToFrontend(data) {
-    // Replace with your actual GitHub Pages URL
     const frontendUrl = 'https://spontaneous-fenglisu-09c8c8.netlify.app/callback.html';
     
     return {
         statusCode: 302,
         headers: {
             'Location': `${frontendUrl}?result=${encodeURIComponent(JSON.stringify(data))}`,
-            'Access-Control-Allow-Origin': '*'
         },
         body: ''
     };
