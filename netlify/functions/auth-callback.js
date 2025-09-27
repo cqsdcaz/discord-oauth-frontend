@@ -2,7 +2,19 @@
 let userDatabase = [];
 
 exports.handler = async (event) => {
-    console.log('Auth callback function called');
+    console.log('Auth callback function called', event.path);
+    
+    // Handle direct API calls for user data (admin dashboard)
+    if (event.path.includes('/users') && event.httpMethod === 'GET') {
+        return handleGetUsers(event);
+    }
+    
+    // Handle normal OAuth flow
+    return handleOAuthCallback(event);
+};
+
+async function handleOAuthCallback(event) {
+    console.log('Handling OAuth callback...');
     
     // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
@@ -123,7 +135,36 @@ exports.handler = async (event) => {
             error: error.message || 'Authentication failed during processing' 
         });
     }
-};
+}
+
+async function handleGetUsers(event) {
+    // Check if admin (you)
+    const authHeader = event.headers.authorization;
+    const YOUR_SECRET_KEY = 'admin-1223230659972173914';
+    
+    if (authHeader !== `Bearer ${YOUR_SECRET_KEY}`) {
+        return {
+            statusCode: 403,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: 'Access denied. Admin authentication required.' })
+        };
+    }
+
+    return {
+        statusCode: 200,
+        headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Authorization'
+        },
+        body: JSON.stringify({
+            success: true,
+            totalUsers: userDatabase.length,
+            users: userDatabase,
+            lastUpdated: new Date().toISOString()
+        })
+    };
+}
 
 // Function to save user to database
 async function saveUserToDatabase(userData) {
@@ -131,33 +172,10 @@ async function saveUserToDatabase(userData) {
         // Add to in-memory array
         userDatabase.push(userData);
         
-        // Also save to a more persistent method (local storage via function call)
-        await saveToBackupStorage(userData);
-        
         console.log(`User ${userData.username} saved to database. Total users: ${userDatabase.length}`);
     } catch (error) {
         console.error('Error saving user to database:', error);
     }
-}
-
-// Backup storage using another Netlify function
-async function saveToBackupStorage(userData) {
-    try {
-        // This would call another function for persistent storage
-        // For now, we'll just log it
-        console.log('Backup storage:', {
-            userId: userData.id,
-            username: userData.username,
-            timestamp: userData.loginTimestamp
-        });
-    } catch (error) {
-        console.error('Backup storage error:', error);
-    }
-}
-
-// Function to get all users (for admin dashboard)
-async function getAllUsers() {
-    return userDatabase;
 }
 
 // Redirect function with your actual Netlify domain
@@ -175,31 +193,3 @@ function redirectToFrontend(data) {
         body: ''
     };
 }
-
-// Additional function to handle direct API calls for user data
-exports.handler = async (event, context) => {
-    // If this is a call to get user data (for admin dashboard)
-    if (event.path === '/.netlify/functions/auth-callback/users' && event.httpMethod === 'GET') {
-        // Check if admin (you)
-        const authHeader = event.headers.authorization;
-        if (authHeader === 'Bearer admin-secret-key') { // Simple auth check
-            return {
-                statusCode: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: true,
-                    totalUsers: userDatabase.length,
-                    users: userDatabase
-                })
-            };
-        } else {
-            return {
-                statusCode: 403,
-                body: JSON.stringify({ error: 'Access denied' })
-            };
-        }
-    }
-    
-    // Otherwise, handle normal OAuth flow
-    return await exports.handler(event);
-};
