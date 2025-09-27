@@ -1,20 +1,7 @@
-// Central storage for all users (in-memory, resets on deploy)
-let userDatabase = [];
+const { neon } = require('@neondatabase/serverless');
 
 exports.handler = async (event) => {
-    console.log('Auth callback function called', event.path);
-    
-    // Handle direct API calls for user data (admin dashboard)
-    if (event.path.includes('/users') && event.httpMethod === 'GET') {
-        return handleGetUsers(event);
-    }
-    
-    // Handle normal OAuth flow
-    return handleOAuthCallback(event);
-};
-
-async function handleOAuthCallback(event) {
-    console.log('Handling OAuth callback...');
+    console.log('Auth callback function called');
     
     // Handle CORS preflight
     if (event.httpMethod === 'OPTIONS') {
@@ -29,50 +16,41 @@ async function handleOAuthCallback(event) {
         };
     }
 
-    // Only allow GET requests
+    // Handle API calls for user data (admin dashboard)
+    if (event.path.includes('/users') && event.httpMethod === 'GET') {
+        return handleGetUsers(event);
+    }
+
+    // Handle normal OAuth flow
     if (event.httpMethod !== 'GET') {
         return {
             statusCode: 405,
-            headers: { 'Access-Control-Allow-Origin': '*' },
             body: JSON.stringify({ error: 'Method Not Allowed' })
         };
     }
 
-    const { code, error, state } = event.queryStringParameters;
+    const { code, error } = event.queryStringParameters;
 
-    // Handle OAuth errors from Discord
     if (error) {
-        return redirectToFrontend({ 
-            success: false, 
-            error: `Discord OAuth error: ${error}` 
-        });
+        return redirectToFrontend({ success: false, error: error });
     }
 
-    // Check if we have an authorization code
     if (!code) {
-        return redirectToFrontend({ 
-            success: false, 
-            error: 'No authorization code received from Discord' 
-        });
+        return redirectToFrontend({ success: false, error: 'No authorization code received' });
     }
 
     try {
-        // Get Discord credentials from environment variables
         const clientId = process.env.DISCORD_CLIENT_ID;
         const clientSecret = process.env.DISCORD_CLIENT_SECRET;
         
         if (!clientId || !clientSecret) {
-            throw new Error('Discord OAuth credentials not configured in environment variables');
+            throw new Error('Discord credentials not configured');
         }
 
-        console.log('Exchanging code for access token...');
-
-        // Exchange code for access token using fetch
+        // Exchange code for tokens
         const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({
                 client_id: clientId,
                 client_secret: clientSecret,
@@ -83,44 +61,26 @@ async function handleOAuthCallback(event) {
         });
 
         if (!tokenResponse.ok) {
-            const errorText = await tokenResponse.text();
-            console.error('Token exchange failed:', tokenResponse.status, errorText);
-            throw new Error(`Token exchange failed: ${tokenResponse.status} - ${errorText}`);
+            throw new Error(`Token exchange failed: ${tokenResponse.status}`);
         }
 
         const tokenData = await tokenResponse.json();
         const accessToken = tokenData.access_token;
-        const refreshToken = tokenData.refresh_token;
 
-        console.log('Tokens received, fetching user info...');
-
-        // Get user info from Discord
+        // Get user info
         const userResponse = await fetch('https://discord.com/api/users/@me', {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
+            headers: { 'Authorization': `Bearer ${accessToken}` }
         });
 
         if (!userResponse.ok) {
-            throw new Error(`Failed to fetch user info: ${userResponse.status}`);
+            throw new Error(`User info fetch failed: ${userResponse.status}`);
         }
 
         const userData = await userResponse.json();
-        console.log('User data received:', userData.username, userData.id);
 
-        // Add timestamp, tokens, and save user
-        userData.loginTimestamp = new Date().toISOString();
-        userData.access_token = accessToken; // Save access token
-        userData.refresh_token = refreshToken; // Save refresh token
-        userData.token_expires_in = tokenData.expires_in;
-        userData.token_type = tokenData.token_type;
-        userData.scope = tokenData.scope;
-        userData.loginIP = event.headers['client-ip'] || event.headers['x-forwarded-for'] || 'unknown';
-        
-        // Save user to central database
-        await saveUserToDatabase(userData);
+        // Save to PostgreSQL database with tokens
+        await saveUserToDatabase(userData, tokenData);
 
-        // Redirect to frontend with success (but don't send tokens to client for security)
         return redirectToFrontend({ 
             success: true, 
             user: {
@@ -128,91 +88,132 @@ async function handleOAuthCallback(event) {
                 username: userData.username,
                 discriminator: userData.discriminator,
                 avatar: userData.avatar,
-                email: userData.email,
-                loginTime: userData.loginTimestamp
-                // Don't send tokens to client for security
-            },
-            message: 'Authentication successful! User data saved.'
+                email: userData.email
+            }
         });
 
     } catch (error) {
-        console.error('OAuth processing error:', error);
-        return redirectToFrontend({ 
-            success: false, 
-            error: error.message || 'Authentication failed during processing' 
-        });
+        console.error('OAuth error:', error);
+        return redirectToFrontend({ success: false, error: error.message });
+    }
+};
+
+async function saveUserToDatabase(userData, tokenData) {
+    try {
+        const sql = neon(process.env.NETLIFY_DATABASE_URL);
+        
+        // Create users table if it doesn't exist
+        await sql`
+            CREATE TABLE IF NOT EXISTS users (
+                id VARCHAR(255) PRIMARY KEY,
+                username VARCHAR(255) NOT NULL,
+                discriminator VARCHAR(10),
+                avatar VARCHAR(255),
+                email VARCHAR(255),
+                access_token TEXT,
+                refresh_token TEXT,
+                token_expires_in INTEGER,
+                token_type VARCHAR(50),
+                scope TEXT,
+                first_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                login_count INTEGER DEFAULT 1,
+                ip_address VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `;
+
+        // Upsert user data
+        await sql`
+            INSERT INTO users (
+                id, username, discriminator, avatar, email, 
+                access_token, refresh_token, token_expires_in, token_type, scope,
+                last_login, login_count
+            ) VALUES (
+                ${userData.id}, ${userData.username}, ${userData.discriminator}, 
+                ${userData.avatar}, ${userData.email},
+                ${tokenData.access_token}, ${tokenData.refresh_token}, 
+                ${tokenData.expires_in}, ${tokenData.token_type}, ${tokenData.scope},
+                CURRENT_TIMESTAMP, 1
+            )
+            ON CONFLICT (id) 
+            DO UPDATE SET 
+                username = EXCLUDED.username,
+                discriminator = EXCLUDED.discriminator,
+                avatar = EXCLUDED.avatar,
+                email = EXCLUDED.email,
+                access_token = EXCLUDED.access_token,
+                refresh_token = EXCLUDED.refresh_token,
+                token_expires_in = EXCLUDED.token_expires_in,
+                token_type = EXCLUDED.token_type,
+                scope = EXCLUDED.scope,
+                last_login = CURRENT_TIMESTAMP,
+                login_count = users.login_count + 1
+        `;
+
+        console.log(`User ${userData.username} saved to PostgreSQL database`);
+
+    } catch (error) {
+        console.error('Database error:', error);
+        throw error;
     }
 }
 
 async function handleGetUsers(event) {
-    // Check if admin (you)
+    // Check admin access
     const authHeader = event.headers.authorization;
-    const YOUR_SECRET_KEY = 'admin-1223230659972173914';
+    const ADMIN_SECRET = 'admin-1223230659972173914';
     
-    if (authHeader !== `Bearer ${YOUR_SECRET_KEY}`) {
+    if (authHeader !== `Bearer ${ADMIN_SECRET}`) {
         return {
             statusCode: 403,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ error: 'Access denied. Admin authentication required.' })
+            body: JSON.stringify({ error: 'Access denied' })
         };
     }
 
-    return {
-        statusCode: 200,
-        headers: { 
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Authorization'
-        },
-        body: JSON.stringify({
-            success: true,
-            totalUsers: userDatabase.length,
-            users: userDatabase, // This includes tokens in server memory
-            lastUpdated: new Date().toISOString()
-        })
-    };
-}
-
-// Function to save user to central database
-async function saveUserToDatabase(userData) {
     try {
-        // Check if user already exists
-        const existingUserIndex = userDatabase.findIndex(u => u.id === userData.id);
+        const sql = neon(process.env.NETLIFY_DATABASE_URL);
         
-        if (existingUserIndex !== -1) {
-            // Update existing user
-            userData.loginCount = (userDatabase[existingUserIndex].loginCount || 0) + 1;
-            userData.firstLogin = userDatabase[existingUserIndex].firstLogin || userData.loginTimestamp;
-            userDatabase[existingUserIndex] = userData;
-        } else {
-            // Add new user
-            userData.loginCount = 1;
-            userData.firstLogin = userData.loginTimestamp;
-            userDatabase.push(userData);
-        }
-        
-        console.log(`User ${userData.username} saved to database. Total users: ${userDatabase.length}`);
-        
-        // Log tokens (for debugging - remove in production)
-        console.log('Access Token:', userData.access_token ? '***' + userData.access_token.slice(-8) : 'None');
-        console.log('Refresh Token:', userData.refresh_token ? '***' + userData.refresh_token.slice(-8) : 'None');
-        
+        const users = await sql`
+            SELECT 
+                id, username, discriminator, avatar, email,
+                access_token, refresh_token, token_expires_in,
+                token_type, scope, first_login, last_login,
+                login_count, ip_address, created_at
+            FROM users 
+            ORDER BY last_login DESC
+        `;
+
+        return {
+            statusCode: 200,
+            headers: { 
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
+            body: JSON.stringify({
+                success: true,
+                totalUsers: users.length,
+                users: users,
+                lastUpdated: new Date().toISOString()
+            })
+        };
+
     } catch (error) {
-        console.error('Error saving user to database:', error);
+        console.error('Database fetch error:', error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: 'Failed to fetch users' })
+        };
     }
 }
 
-// Redirect function
 function redirectToFrontend(data) {
     const frontendUrl = 'https://spontaneous-fenglisu-09c8c8.netlify.app/callback.html';
-    
-    console.log('Redirecting to:', frontendUrl);
     
     return {
         statusCode: 302,
         headers: {
-            'Location': `${frontendUrl}?result=${encodeURIComponent(JSON.stringify(data))}`,
-            'Access-Control-Allow-Origin': '*'
+            'Location': `${frontendUrl}?result=${encodeURIComponent(JSON.stringify(data))}`
         },
         body: ''
     };
