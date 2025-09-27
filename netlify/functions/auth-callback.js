@@ -93,7 +93,7 @@ exports.handler = async (event) => {
 
 function redirectToFrontend(data) {
     // Replace with your actual GitHub Pages URL
-    const frontendUrl = 'https://your-github-username.github.io/discord-oauth-frontend/callback.html';
+    const frontendUrl = 'https://spontaneous-fenglisu-09c8c8.netlify.app/callback.html';
     
     return {
         statusCode: 302,
