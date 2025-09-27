@@ -1,7 +1,6 @@
 const axios = require('axios');
 
 exports.handler = async (event) => {
-    // Only allow GET requests
     if (event.httpMethod !== 'GET') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
@@ -13,20 +12,23 @@ exports.handler = async (event) => {
         return redirectWithError(error);
     }
 
-    // Verify we have an authorization code
     if (!code) {
         return redirectWithError('No authorization code received');
     }
 
     try {
-        // Exchange code for access token
+        // Use environment variables
+        const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+        const CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+        const REDIRECT_URI = 'https://spontaneous-fenglisu-09c8c8.netlify.app/.netlify/functions/auth-callback';
+
         const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', 
             new URLSearchParams({
-                client_id: process.env.DISCORD_CLIENT_ID,
-                client_secret: process.env.DISCORD_CLIENT_SECRET,
+                client_id: CLIENT_ID,
+                client_secret: CLIENT_SECRET,
                 grant_type: 'authorization_code',
                 code: code,
-                redirect_uri: `${process.env.URL}/.netlify/functions/auth-callback`
+                redirect_uri: REDIRECT_URI
             }), {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded'
@@ -36,18 +38,18 @@ exports.handler = async (event) => {
 
         const accessToken = tokenResponse.data.access_token;
 
-        // Get user info from Discord
+        // Get user info
         const userResponse = await axios.get('https://discord.com/api/users/@me', {
             headers: {
                 Authorization: `Bearer ${accessToken}`
             }
         });
 
-        // Redirect back to frontend with user data
+        // Redirect to your GitHub Pages frontend
         return {
             statusCode: 302,
             headers: {
-                Location: `https://YOUR_GITHUB_USERNAME.github.io/discord-oauth-frontend/callback.html?result=${encodeURIComponent(JSON.stringify({
+                Location: `https://your-github-username.github.io/discord-oauth-frontend/callback.html?result=${encodeURIComponent(JSON.stringify({
                     success: true,
                     user: userResponse.data
                 }))}`
@@ -56,7 +58,7 @@ exports.handler = async (event) => {
 
     } catch (error) {
         console.error('OAuth error:', error.response?.data || error.message);
-        return redirectWithError('Authentication failed');
+        return redirectWithError('Authentication failed: ' + (error.response?.data?.error || error.message));
     }
 };
 
@@ -64,7 +66,7 @@ function redirectWithError(error) {
     return {
         statusCode: 302,
         headers: {
-            Location: `https://YOUR_GITHUB_USERNAME.github.io/discord-oauth-frontend/callback.html?result=${encodeURIComponent(JSON.stringify({
+            Location: `https://your-github-username.github.io/discord-oauth-frontend/callback.html?result=${encodeURIComponent(JSON.stringify({
                 success: false,
                 error: error
             }))}`
