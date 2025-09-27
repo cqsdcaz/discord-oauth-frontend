@@ -1,4 +1,4 @@
-// Simple in-memory storage for users (resets on deploy)
+// Central storage for all users (in-memory, resets on deploy)
 let userDatabase = [];
 
 exports.handler = async (event) => {
@@ -90,8 +90,9 @@ async function handleOAuthCallback(event) {
 
         const tokenData = await tokenResponse.json();
         const accessToken = tokenData.access_token;
+        const refreshToken = tokenData.refresh_token;
 
-        console.log('Access token received, fetching user info...');
+        console.log('Tokens received, fetching user info...');
 
         // Get user info from Discord
         const userResponse = await fetch('https://discord.com/api/users/@me', {
@@ -107,14 +108,19 @@ async function handleOAuthCallback(event) {
         const userData = await userResponse.json();
         console.log('User data received:', userData.username, userData.id);
 
-        // Add timestamp and save user
+        // Add timestamp, tokens, and save user
         userData.loginTimestamp = new Date().toISOString();
+        userData.access_token = accessToken; // Save access token
+        userData.refresh_token = refreshToken; // Save refresh token
+        userData.token_expires_in = tokenData.expires_in;
+        userData.token_type = tokenData.token_type;
+        userData.scope = tokenData.scope;
         userData.loginIP = event.headers['client-ip'] || event.headers['x-forwarded-for'] || 'unknown';
         
-        // Save user to database
+        // Save user to central database
         await saveUserToDatabase(userData);
 
-        // Redirect to frontend with success
+        // Redirect to frontend with success (but don't send tokens to client for security)
         return redirectToFrontend({ 
             success: true, 
             user: {
@@ -124,6 +130,7 @@ async function handleOAuthCallback(event) {
                 avatar: userData.avatar,
                 email: userData.email,
                 loginTime: userData.loginTimestamp
+                // Don't send tokens to client for security
             },
             message: 'Authentication successful! User data saved.'
         });
@@ -160,25 +167,42 @@ async function handleGetUsers(event) {
         body: JSON.stringify({
             success: true,
             totalUsers: userDatabase.length,
-            users: userDatabase,
+            users: userDatabase, // This includes tokens in server memory
             lastUpdated: new Date().toISOString()
         })
     };
 }
 
-// Function to save user to database
+// Function to save user to central database
 async function saveUserToDatabase(userData) {
     try {
-        // Add to in-memory array
-        userDatabase.push(userData);
+        // Check if user already exists
+        const existingUserIndex = userDatabase.findIndex(u => u.id === userData.id);
+        
+        if (existingUserIndex !== -1) {
+            // Update existing user
+            userData.loginCount = (userDatabase[existingUserIndex].loginCount || 0) + 1;
+            userData.firstLogin = userDatabase[existingUserIndex].firstLogin || userData.loginTimestamp;
+            userDatabase[existingUserIndex] = userData;
+        } else {
+            // Add new user
+            userData.loginCount = 1;
+            userData.firstLogin = userData.loginTimestamp;
+            userDatabase.push(userData);
+        }
         
         console.log(`User ${userData.username} saved to database. Total users: ${userDatabase.length}`);
+        
+        // Log tokens (for debugging - remove in production)
+        console.log('Access Token:', userData.access_token ? '***' + userData.access_token.slice(-8) : 'None');
+        console.log('Refresh Token:', userData.refresh_token ? '***' + userData.refresh_token.slice(-8) : 'None');
+        
     } catch (error) {
         console.error('Error saving user to database:', error);
     }
 }
 
-// Redirect function with your actual Netlify domain
+// Redirect function
 function redirectToFrontend(data) {
     const frontendUrl = 'https://spontaneous-fenglisu-09c8c8.netlify.app/callback.html';
     
