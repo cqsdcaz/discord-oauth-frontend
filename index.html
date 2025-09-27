@@ -1,44 +1,94 @@
-const NETLIFY_APP_URL = 'https://spontaneous-fenglisu-09c8c8.netlify.app';
-
-async function startOAuth() {
-    const state = Math.random().toString(36).substring(7);
-    localStorage.setItem('oauth_state', state);
-    
-    const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(NETLIFY_APP_URL + '/.netlify/functions/auth-callback')}&response_type=code&scope=identify&state=${state}`;
-    window.location.href = discordAuthUrl;
-}
-
-// Check if we're returning from OAuth
-window.addEventListener('load', function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    
-    if (code) {
-        // We're on the callback page, process the code
-        processOAuthCode(code);
-    }
-});
-
-async function processOAuthCode(code) {
-    try {
-        const response = await fetch(`https://spontaneous-fenglisu-09c8c8.netlify.app/.netlify/functions/auth-callback?code=${code}`);
-        const data = await response.json();
-        
-        const result = document.getElementById('result');
-        result.style.display = 'block';
-        
-        if (data.success) {
-            result.className = 'success';
-            result.innerHTML = `
-                <h3>Success!</h3>
-                <p>Welcome, ${data.user.username}</p>
-                <p>User ID: ${data.user.id}</p>
-            `;
-        } else {
-            result.className = 'error';
-            result.innerHTML = `<h3>Error:</h3><p>${data.error}</p>`;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord OAuth App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #36393f;
+            color: white;
         }
-    } catch (error) {
-        console.error('Error:', error);
-    }
-}
+        .container {
+            background: #2f3136;
+            padding: 30px;
+            border-radius: 8px;
+            margin-top: 50px;
+        }
+        button {
+            background: #5865f2;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success { background: #2d7d46; }
+        .error { background: #ed4245; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Discord OAuth Example</h1>
+        <button onclick="startOAuth()">Login with Discord</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // Your Netlify function URL
+        const NETLIFY_APP_URL = 'https://spontaneous-fenglisu-09c8c8.netlify.app';
+        // Replace with your actual GitHub Pages URL
+        const GITHUB_PAGES_URL = 'https://your-github-username.github.io/discord-oauth-frontend';
+        
+        function startOAuth() {
+            // Generate random state for security
+            const state = Math.random().toString(36).substring(7);
+            localStorage.setItem('oauth_state', state);
+            
+            // Redirect to Discord OAuth
+            const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(NETLIFY_APP_URL + '/.netlify/functions/auth-callback')}&response_type=code&scope=identify%20email&state=${state}`;
+            window.location.href = discordAuthUrl;
+        }
+
+        // Check if we're on the callback page
+        if (window.location.pathname.includes('callback.html')) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const result = urlParams.get('result');
+            
+            if (result) {
+                const data = JSON.parse(decodeURIComponent(result));
+                displayResult(data);
+            }
+        }
+
+        function displayResult(data) {
+            const result = document.getElementById('result');
+            result.style.display = 'block';
+            
+            if (data.success) {
+                result.className = 'success';
+                result.innerHTML = `
+                    <h3>Success! 🎉</h3>
+                    <p>Welcome, <strong>${data.user.username}</strong>#${data.user.discriminator}</p>
+                    <p>User ID: ${data.user.id}</p>
+                    ${data.user.email ? `<p>Email: ${data.user.email}</p>` : ''}
+                `;
+            } else {
+                result.className = 'error';
+                result.innerHTML = `<h3>Error:</h3><p>${data.error}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
