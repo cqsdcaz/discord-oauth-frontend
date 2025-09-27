@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord OAuth App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #36393f;
+            color: white;
+        }
+        .container {
+            background: #2f3136;
+            padding: 30px;
+            border-radius: 8px;
+            margin-top: 50px;
+        }
+        button {
+            background: #5865f2;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .success { background: #2d7d46; }
+        .error { background: #ed4245; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Discord OAuth Example</h1>
+        <button onclick="startOAuth()">Login with Discord</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        // Replace with your Netlify app URL
+        const NETLIFY_APP_URL = 'https://your-app-name.netlify.app';
+        
+        function startOAuth() {
+            // Generate random state for security
+            const state = Math.random().toString(36).substring(7);
+            localStorage.setItem('oauth_state', state);
+            
+            // Redirect to Discord OAuth
+            const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=${encodeURIComponent(NETLIFY_APP_URL + '/.netlify/functions/auth-callback')}&response_type=code&scope=identify&state=${state}`;
+            window.location.href = discordAuthUrl;
+        }
+
+        // Handle callback from Netlify function
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'oauth_result') {
+                const result = document.getElementById('result');
+                result.style.display = 'block';
+                
+                if (event.data.success) {
+                    result.className = 'success';
+                    result.innerHTML = `
+                        <h3>Success!</h3>
+                        <p>Welcome, ${event.data.user.username}#${event.data.user.discriminator}</p>
+                        <p>User ID: ${event.data.user.id}</p>
+                    `;
+                } else {
+                    result.className = 'error';
+                    result.innerHTML = `<h3>Error:</h3><p>${event.data.error}</p>`;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
