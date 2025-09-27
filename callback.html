@@ -2,22 +2,50 @@
 <html>
 <head>
     <title>OAuth Callback</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            text-align: center; 
+            padding: 50px;
+            background: #36393f;
+            color: white;
+        }
+    </style>
 </head>
 <body>
+    <h1>Processing Authentication...</h1>
+    <div id="status">Please wait while we complete your login.</div>
+
     <script>
-        // Parse URL parameters
+        // Parse the result from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const result = urlParams.get('result');
         
         if (result) {
-            // Send result back to opener window
-            if (window.opener) {
-                window.opener.postMessage({
-                    type: 'oauth_result',
-                    ...JSON.parse(decodeURIComponent(result))
-                }, '*');
+            try {
+                const data = JSON.parse(decodeURIComponent(result));
+                displayResult(data);
+            } catch (error) {
+                document.getElementById('status').innerHTML = 
+                    '<p style="color: red;">Error processing authentication</p>';
             }
-            window.close();
+        }
+
+        function displayResult(data) {
+            const statusDiv = document.getElementById('status');
+            
+            if (data.success) {
+                statusDiv.innerHTML = `
+                    <p style="color: green;">✅ Authentication successful!</p>
+                    <p>Welcome, ${data.user.username}!</p>
+                    <p>You can close this window now.</p>
+                `;
+            } else {
+                statusDiv.innerHTML = `
+                    <p style="color: red;">❌ Authentication failed</p>
+                    <p>Error: ${data.error}</p>
+                `;
+            }
         }
     </script>
 </body>
