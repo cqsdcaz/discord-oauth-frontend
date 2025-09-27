@@ -1,488 +1,157 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard - User Management</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        }
+async function loadAllUsers() {
+    try {
+        document.getElementById('loading-users').classList.remove('hidden');
+        document.getElementById('users-grid').classList.add('hidden');
         
-        body {
-            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
-            color: #ffffff;
-            min-height: 100vh;
-            padding: 20px;
-        }
+        // Try to get users from SERVER (not just localStorage)
+        const serverUsers = await getUsersFromServer();
+        const localUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
         
-        .admin-container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        // Combine server and local users (server takes priority)
+        const allUsers = [...serverUsers, ...localUsers.filter(localUser => 
+            !serverUsers.some(serverUser => serverUser.id === localUser.id)
+        )];
         
-        .header {
-            background: #2a2a2a;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            border-left: 5px solid #ed4245;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        }
+        // Update statistics
+        updateStatistics(allUsers);
         
-        .admin-badge {
-            background: #ed4245;
-            color: white;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: bold;
-            display: inline-block;
-            margin-left: 15px;
-        }
+        // Display users with token information
+        displayUsers(allUsers);
         
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
+        document.getElementById('loading-users').classList.add('hidden');
+        document.getElementById('users-grid').classList.remove('hidden');
         
-        .stat-card {
-            background: #36393f;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-            border: 1px solid #40444b;
-        }
-        
-        .stat-number {
-            font-size: 2.5em;
-            font-weight: bold;
-            color: #5865f2;
-            margin: 10px 0;
-        }
-        
-        .controls {
-            background: #2a2a2a;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        button {
-            background: #5865f2;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        button:hover {
-            background: #4752c4;
-            transform: translateY(-2px);
-        }
-        
-        button.danger {
-            background: #ed4245;
-        }
-        
-        button.danger:hover {
-            background: #c03537;
-        }
-        
-        button.success {
-            background: #3ba55c;
-        }
-        
-        button.success:hover {
-            background: #2d7d46;
-        }
-        
-        .users-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 20px;
-        }
-        
-        .user-card {
-            background: #36393f;
-            border-radius: 10px;
-            padding: 20px;
-            border: 1px solid #40444b;
-            transition: transform 0.3s;
-        }
-        
-        .user-card:hover {
-            transform: translateY(-5px);
-            border-color: #5865f2;
-        }
-        
-        .user-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-        
-        .user-avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            margin-right: 15px;
-        }
-        
-        .user-info {
-            flex: 1;
-        }
-        
-        .username {
-            font-size: 1.2em;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        
-        .user-id {
-            color: #b9bbbe;
-            font-size: 0.9em;
-            font-family: monospace;
-        }
-        
-        .user-details {
-            background: #2a2a2a;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 10px;
-        }
-        
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 5px 0;
-            padding: 3px 0;
-            border-bottom: 1px solid #40444b;
-        }
-        
-        .detail-label {
-            color: #b9bbbe;
-        }
-        
-        .admin-indicator {
-            background: #ed4245;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            margin-left: 10px;
-        }
-        
-        .access-denied {
-            text-align: center;
-            padding: 100px 20px;
-        }
-        
-        .access-denied h1 {
-            color: #ed4245;
-            font-size: 3em;
-            margin-bottom: 20px;
-        }
-        
-        .hidden {
-            display: none;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 50px;
-            color: #b9bbbe;
-        }
-        
-        .timestamp {
-            font-size: 0.8em;
-            color: #72767d;
-        }
-        
-        @media (max-width: 768px) {
-            .controls {
-                flex-direction: column;
-            }
-            
-            .users-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <!-- Access Denied Screen -->
-    <div id="access-denied" class="access-denied hidden">
-        <h1>🚫 Access Denied</h1>
-        <p>This admin dashboard is restricted to authorized personnel only.</p>
-        <p>Your user ID: <span id="current-user-id"></span></p>
-        <button onclick="goHome()" style="margin-top: 20px;">🏠 Return to Home</button>
-    </div>
+    } catch (error) {
+        console.error('Error loading users:', error);
+        // Fallback to localStorage only
+        const localUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+        updateStatistics(localUsers);
+        displayUsers(localUsers);
+        document.getElementById('loading-users').classList.add('hidden');
+        document.getElementById('users-grid').classList.remove('hidden');
+    }
+}
 
-    <!-- Admin Dashboard -->
-    <div id="admin-dashboard" class="admin-container hidden">
-        <div class="header">
-            <h1>🔐 Admin Dashboard <span class="admin-badge">RESTRICTED ACCESS</span></h1>
-            <p>User management panel - Monitoring all authentication activity</p>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div>👥 Total Users</div>
-                    <div class="stat-number" id="total-users">0</div>
-                    <div>Registered accounts</div>
-                </div>
-                <div class="stat-card">
-                    <div>📊 Active Today</div>
-                    <div class="stat-number" id="active-today">0</div>
-                    <div>Recent logins</div>
-                </div>
-                <div class="stat-card">
-                    <div>🕒 Last Update</div>
-                    <div class="stat-number" id="last-update">-</div>
-                    <div>Data refresh</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="controls">
-            <button onclick="loadAllUsers()" id="refresh-btn">
-                🔄 Refresh Data
-            </button>
-            <button onclick="exportUsersJSON()" class="success">
-                📥 Export JSON
-            </button>
-            <button onclick="clearAllData()" class="danger">
-                🗑️ Clear All Data
-            </button>
-            <button onclick="goToDashboard()">
-                👤 User Dashboard
-            </button>
-            <button onclick="goHome()">
-                🏠 Home Page
-            </button>
-        </div>
-
-        <div id="users-container">
-            <div class="loading" id="loading-users">
-                <p>Loading user data...</p>
-            </div>
-            <div id="users-grid" class="users-grid hidden"></div>
-        </div>
-    </div>
-
-    <script>
-        // Configuration
-        const ADMIN_USER_ID = '1223230659972173914'; // Your Discord ID
-        const API_SECRET = 'admin-1223230659972173914';
-        
-        // Check admin access on page load
-        window.addEventListener('load', function() {
-            checkAdminAccess();
-        });
-
-        function checkAdminAccess() {
-            const currentUser = JSON.parse(localStorage.getItem('current_user') || 'null');
-            
-            if (!currentUser) {
-                showAccessDenied('Not logged in');
-                return;
-            }
-
-            if (currentUser.id !== ADMIN_USER_ID) {
-                document.getElementById('current-user-id').textContent = currentUser.id;
-                showAccessDenied(`User ${currentUser.username} is not authorized`);
-                return;
-            }
-
-            // User is admin - show dashboard
-            document.getElementById('access-denied').classList.add('hidden');
-            document.getElementById('admin-dashboard').classList.remove('hidden');
-            
-            // Load initial data
-            loadAllUsers();
-            
-            // Auto-refresh every 30 seconds
-            setInterval(loadAllUsers, 30000);
-        }
-
-        function showAccessDenied(reason) {
-            console.log('Access denied:', reason);
-            document.getElementById('access-denied').classList.remove('hidden');
-            document.getElementById('admin-dashboard').classList.add('hidden');
-        }
-
-        async function loadAllUsers() {
-            try {
-                document.getElementById('loading-users').classList.remove('hidden');
-                document.getElementById('users-grid').classList.add('hidden');
-                
-                // Try to get users from localStorage first
-                const users = JSON.parse(localStorage.getItem('all_users') || '[]');
-                
-                // Update statistics
-                updateStatistics(users);
-                
-                // Display users
-                displayUsers(users);
-                
-                document.getElementById('loading-users').classList.add('hidden');
-                document.getElementById('users-grid').classList.remove('hidden');
-                
-            } catch (error) {
-                console.error('Error loading users:', error);
-                document.getElementById('loading-users').innerHTML = 
-                    '<p style="color: #ed4245;">Error loading user data</p>';
-            }
-        }
-
-        function updateStatistics(users) {
-            const totalUsers = users.length;
-            const now = new Date();
-            const activeToday = users.filter(user => {
-                const loginTime = new Date(user.lastLogin || user.loginTime);
-                return (now - loginTime) < (24 * 60 * 60 * 1000); // Last 24 hours
-            }).length;
-
-            document.getElementById('total-users').textContent = totalUsers;
-            document.getElementById('active-today').textContent = activeToday;
-            document.getElementById('last-update').textContent = 
-                now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        }
-
-        function displayUsers(users) {
-            const usersGrid = document.getElementById('users-grid');
-            
-            if (users.length === 0) {
-                usersGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #b9bbbe;">
-                        <h3>No users found</h3>
-                        <p>User data will appear here as people authenticate with your app.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            // Sort users by most recent login
-            users.sort((a, b) => new Date(b.lastLogin || b.loginTime) - new Date(a.lastLogin || a.loginTime));
-
-            usersGrid.innerHTML = users.map(user => `
-                <div class="user-card">
-                    <div class="user-header">
-                        <img src="${getAvatarUrl(user)}" class="user-avatar" 
-                             onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
-                        <div class="user-info">
-                            <div class="username">
-                                ${user.username}
-                                ${user.id === ADMIN_USER_ID ? '<span class="admin-indicator">ADMIN</span>' : ''}
-                            </div>
-                            <div class="user-id">${user.id}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="user-details">
-                        <div class="detail-row">
-                            <span class="detail-label">Email:</span>
-                            <span>${user.email || 'Not provided'}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Discriminator:</span>
-                            <span>#${user.discriminator || '0'}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Logins:</span>
-                            <span>${user.loginCount || 1}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">First Login:</span>
-                            <span class="timestamp">${formatDate(user.firstLogin || user.loginTime)}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Last Login:</span>
-                            <span class="timestamp">${formatDate(user.lastLogin || user.loginTime)}</span>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function getAvatarUrl(user) {
-            if (user.avatar) {
-                return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
-            }
-            const avatarIndex = user.discriminator ? user.discriminator % 5 : 0;
-            return `https://cdn.discordapp.com/embed/avatars/${avatarIndex}.png`;
-        }
-
-        function formatDate(dateString) {
-            if (!dateString) return 'Unknown';
-            const date = new Date(dateString);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
-                hour: '2-digit', minute: '2-digit' 
-            });
-        }
-
-        function exportUsersJSON() {
-            const users = JSON.parse(localStorage.getItem('all_users') || '[]');
-            const dataStr = JSON.stringify(users, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(dataBlob);
-            link.download = `discord-users-${new Date().toISOString().split('T')[0]}.json`;
-            link.click();
-            
-            // Show confirmation
-            alert(`Exported ${users.length} users to JSON file`);
-        }
-
-        function clearAllData() {
-            if (confirm('⚠️ Are you sure you want to clear ALL user data? This cannot be undone!')) {
-                localStorage.removeItem('all_users');
-                localStorage.removeItem('current_user');
-                localStorage.removeItem('last_auth');
-                
-                alert('All user data has been cleared.');
-                loadAllUsers();
-            }
-        }
-
-        function goToDashboard() {
-            window.location.href = 'https://spontaneous-fenglisu-09c8c8.netlify.app/dashboard.html';
-        }
-
-        function goHome() {
-            window.location.href = 'https://spontaneous-fenglisu-09c8c8.netlify.app/index.html';
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                switch(e.key) {
-                    case 'r':
-                        e.preventDefault();
-                        loadAllUsers();
-                        break;
-                    case 'e':
-                        e.preventDefault();
-                        exportUsersJSON();
-                        break;
-                }
+async function getUsersFromServer() {
+    try {
+        const response = await fetch('https://spontaneous-fenglisu-09c8c8.netlify.app/.netlify/functions/auth-callback/users', {
+            headers: {
+                'Authorization': 'Bearer admin-1223230659972173914'
             }
         });
-    </script>
-</body>
-</html>
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.users || [];
+        }
+    } catch (error) {
+        console.error('Failed to fetch users from server:', error);
+    }
+    return [];
+}
+
+function displayUsers(users) {
+    const usersGrid = document.getElementById('users-grid');
+    
+    if (users.length === 0) {
+        usersGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #b9bbbe;">
+                <h3>No users found</h3>
+                <p>User data will appear here as people authenticate with your app.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Sort users by most recent login
+    users.sort((a, b) => new Date(b.lastLogin || b.loginTime || b.loginTimestamp) - new Date(a.lastLogin || a.loginTime || a.loginTimestamp));
+
+    usersGrid.innerHTML = users.map(user => `
+        <div class="user-card">
+            <div class="user-header">
+                <img src="${getAvatarUrl(user)}" class="user-avatar" 
+                     onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                <div class="user-info">
+                    <div class="username">
+                        ${user.username}
+                        ${user.id === ADMIN_USER_ID ? '<span class="admin-indicator">ADMIN</span>' : ''}
+                    </div>
+                    <div class="user-id">${user.id}</div>
+                </div>
+            </div>
+            
+            <div class="user-details">
+                <div class="detail-row">
+                    <span class="detail-label">Email:</span>
+                    <span>${user.email || 'Not provided'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Discriminator:</span>
+                    <span>#${user.discriminator || '0'}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Logins:</span>
+                    <span>${user.loginCount || 1}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Access Token:</span>
+                    <span style="font-family: monospace; font-size: 0.8em;">
+                        ${user.access_token ? '•••' + user.access_token.slice(-8) : 'Not available'}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Refresh Token:</span>
+                    <span style="font-family: monospace; font-size: 0.8em;">
+                        ${user.refresh_token ? '•••' + user.refresh_token.slice(-8) : 'Not available'}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">First Login:</span>
+                    <span class="timestamp">${formatDate(user.firstLogin || user.loginTime || user.loginTimestamp)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Last Login:</span>
+                    <span class="timestamp">${formatDate(user.lastLogin || user.loginTime || user.loginTimestamp)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Token Expires:</span>
+                    <span class="timestamp">${user.token_expires_in ? `in ${user.token_expires_in} seconds` : 'Unknown'}</span>
+                </div>
+            </div>
+            
+            <!-- Token Actions -->
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button onclick="copyToken('${user.access_token || ''}')" 
+                        style="padding: 5px 10px; font-size: 0.8em;" 
+                        ${!user.access_token ? 'disabled' : ''}>
+                    📋 Copy Access Token
+                </button>
+                <button onclick="viewUserDetails('${user.id}')" 
+                        style="padding: 5px 10px; font-size: 0.8em;">
+                    🔍 View Details
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Add these new functions to your admin dashboard script
+function copyToken(token) {
+    if (!token) return;
+    
+    navigator.clipboard.writeText(token).then(() => {
+        alert('Token copied to clipboard!');
+    }).catch(err => {
+        console.error('Failed to copy token:', err);
+    });
+}
+
+function viewUserDetails(userId) {
+    const users = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const user = users.find(u => u.id === userId);
+    
+    if (user) {
+        const details = JSON.stringify(user, null, 2);
+        alert(`User Details:\n\n${details}`);
+    }
+}
